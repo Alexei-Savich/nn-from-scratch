@@ -51,8 +51,8 @@ def test_mnist(file_name, load_from_disk=False):
         with open(file_name, 'rb') as file:
             network = pickle.load(file)
     else:
-        network = nn.NeuralNetwork([784, 100, 100, 100, 10], [None, 'sigmoid', 'sigmoid', 'sigmoid', 'softmax'],
-                                   weights_strategy='xavier')
+        network = nn.NeuralNetwork([784, 100, 100, 100, 10], [None, 'sigmoid', 'relu', 'sigmoid', 'softmax'],
+                                   weights_strategy='he')
     data = pd.read_csv('mnist.csv')
     X = data.drop(columns=['label']).values
     y = data[['label']].values
@@ -82,9 +82,9 @@ def test_mnist(file_name, load_from_disk=False):
     print(accuracy_score(np.argmax(y_test, axis=1), np.argmax(y_pred, axis=1)))
 
 
-def test_insurance(load_from_disk):
+def test_insurance(file_name, load_from_disk):
     if load_from_disk:
-        with open('nn', 'rb') as file:
+        with open(file_name, 'rb') as file:
             network = pickle.load(file)
     else:
         network = nn.NeuralNetwork([8, 100, 20, 1], [None, 'sigmoid', 'sigmoid', 'linear'], weights_strategy='xavier')
@@ -109,7 +109,18 @@ def test_insurance(load_from_disk):
     for pred, test in zip(y_pred, y_test):
         print(f'Test: {test}; pred: {pred}, pred - test {pred - test}; 1 - pred/test: {1 - pred / test}')
 
+    print("Mean y:")
+    print(np.mean(y_test))
+    print("Mean y_pred:")
+    print(np.mean(y_pred))
+    print("Loss of the best NN:")
+    print(network.calc_loss(y_pred, y_test))
+    print("Mean |pred - test|:")
+    print(np.mean(np.abs(y_pred - y_test)))
+    print("Mean |1 - pred/test|:")
+    print(np.mean(np.abs(1 - (y_pred / y_test))))
+
 
 if __name__ == '__main__':
-    test_mnist(load_from_disk=False, file_name='nn')
-    # test_insurance(load_from_disk=False, file_name='nn_reg')
+    # test_mnist(load_from_disk=False, file_name='mnist_86_percent')
+    test_insurance(load_from_disk=False, file_name='nn')
