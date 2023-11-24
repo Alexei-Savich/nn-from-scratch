@@ -67,7 +67,7 @@ def test_mnist(file_name, load_from_disk=False):
     X_val, X_test, y_val, y_test = sklearn.model_selection.train_test_split(X_val, y_val, train_size=0.5)
 
     if not load_from_disk:
-        network = network.train(X_train, y_train, X_val, y_val, learning_rate=0.005, epochs=200, early_stop_epochs=0)
+        network = network.train(X_train, y_train, X_val, y_val, learning_rate=0.005, epochs=200, early_stop_epochs=10)
 
     y_pred = network.feed_forward(X_test)
 

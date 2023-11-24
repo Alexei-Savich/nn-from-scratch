@@ -1,6 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import pickle
+import umap
+from sklearn.decomposition import PCA
 
 
 class Neuron:
@@ -63,7 +65,9 @@ class NeuralNetwork:
 
     def calc_loss(self, y_pred, y):
         last_activation = self.activations[-1]
-        if last_activation in ['relu', 'sigmoid', 'linear']:
+        if last_activation == 'sigmoid':
+            return -1 * (y * np.log(y_pred) + (1 - y) * np.log(1 - y_pred)).mean(axis=1)
+        elif last_activation in ['relu', 'linear']:
             return ((y_pred - y) ** 2).mean()
         elif last_activation == 'softmax':
             return -1 * y * np.log(y_pred)
@@ -84,10 +88,15 @@ class NeuralNetwork:
 
     def back_propagation(self, X, y, learning_rate):
         last_activation = self.activations[-1]
-        if last_activation in ['softmax', 'linear', 'relu']:
+        if last_activation == 'sigmoid':
+            dA = - (np.divide(y, self.layer_outputs[-1]) - np.divide(1 - y, 1 - self.layer_outputs[-1]))
+        elif last_activation == 'softmax':
             dA = - (y - self.layer_outputs[-1])
+        elif last_activation == 'linear':
+            dA = 2 * (self.layer_outputs[-1] - y)
         else:
             raise RuntimeError(f'Unsupported output activation function: {last_activation}')
+
         for i in reversed(range(len(self.layers))):
             current_layer = self.layers[i]
             activation_function = self.activations[i + 1]
@@ -102,7 +111,8 @@ class NeuralNetwork:
 
             dA = np.dot(dZ, np.array([neuron.weights for neuron in current_layer]))
 
-    def train(self, X_train, y_train, X_val, y_val, learning_rate: float, epochs: int, batch_size: int = 64, early_stop_epochs: int = 0):
+    def train(self, X_train, y_train, X_val, y_val, learning_rate: float, epochs: int, batch_size: int = 32,
+              early_stop_epochs: int = 0):
         epoch_losses = []
         m = X_train.shape[0]
         for epoch in range(epochs):
@@ -115,7 +125,11 @@ class NeuralNetwork:
                 self.feed_forward(X_mini)
                 self.back_propagation(X_mini, y_mini, learning_rate)
 
-            if len(self.layers[-1]) > 1:
+            if self.activations[-1] == 'sigmoid':
+                loss = self.calc_loss(self.feed_forward(X_val), y_val).mean()
+            elif self.activations[-1] == 'linear':
+                loss = self.calc_loss(self.feed_forward(X_val), y_val)
+            elif len(self.layers[-1]) > 1:
                 loss = np.average(np.sum(self.calc_loss(self.feed_forward(X_val), y_val), axis=1))
             else:
                 loss = self.calc_loss(self.feed_forward(X_val), y_val)
@@ -123,14 +137,16 @@ class NeuralNetwork:
             stop_now = False
             if early_stop_epochs and len(epoch_losses) > early_stop_epochs:
                 stop_now = True
-                for prev_loss in epoch_losses[-1 - early_stop_epochs: -1]:
+                for prev_loss in epoch_losses[-1 - early_stop_epochs:]:
                     if self.best_loss >= prev_loss:
                         stop_now = False
+                        break
 
             epoch_losses.append(loss)
 
             if stop_now:
-                print(f'Stopping early at epoch {epoch} because validation loss did not increase over last {early_stop_epochs} iterations')
+                print(
+                    f'Stopping early at epoch {epoch} because best loss {self.best_loss} did not descrease over last {early_stop_epochs} iterations: {epoch_losses[-2 - early_stop_epochs:]}')
                 break
 
             if self.best_loss is None or self.best_loss > loss:
@@ -163,3 +179,34 @@ class NeuralNetwork:
             copied_nn.layers.append(copied_layer)
         copied_nn.best_loss = self.best_loss
         return copied_nn
+
+    def visualize_umap(self, data, labels, layer_name):
+        reducer = umap.UMAP()
+        embedding = reducer.fit_transform(data)
+
+        unique_labels = set(labels)
+        for label in unique_labels:
+            indices = [i for i, l in enumerate(labels) if l == label]
+            plt.scatter(embedding[indices, 0], embedding[indices, 1], label=label, cmap='Spectral', s=5)
+
+        plt.gca().set_aspect('equal', 'datalim')
+        plt.title(f'UMAP projection of the Autoencoder Features of layer {layer_name}', fontsize=12)
+        plt.legend()
+        plt.show()
+
+    def get_hidden_layer_outputs(self, X):
+        self.feed_forward(X)
+        return [layer_output for layer_output in self.layer_outputs[:-1]]
+
+    def visualize_hidden_layers(self, X):
+        hidden_layers_outputs = self.get_hidden_layer_outputs(X)
+        for i, layer_output in enumerate(hidden_layers_outputs):
+            pca = PCA(n_components=2)
+            reduced_data = pca.fit_transform(layer_output)
+
+            plt.figure(figsize=(8, 6))
+            plt.scatter(reduced_data[:, 0], reduced_data[:, 1], s=5, alpha=0.7)
+            plt.title(f'Hidden Layer {i + 1} Feature Representation (2D PCA)')
+            plt.xlabel('PCA Component 1')
+            plt.ylabel('PCA Component 2')
+            plt.show()
