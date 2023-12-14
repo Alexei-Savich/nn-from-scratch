@@ -74,7 +74,7 @@ class NeuralNetwork:
         else:
             raise RuntimeError(f'Unsupported output activation function: {last_activation}')
 
-    def feed_forward(self, X: list[float]) -> list[float]:
+    def feed_forward(self, X):
         self.layer_outputs = []
         self.weighted_sums = []
         curr_input = X
@@ -96,6 +96,7 @@ class NeuralNetwork:
             dA = 2 * (self.layer_outputs[-1] - y)
         else:
             raise RuntimeError(f'Unsupported output activation function: {last_activation}')
+        # print(f'Mean First dA of FCN: {(dA ** 2).mean()}')
 
         for i in reversed(range(len(self.layers))):
             current_layer = self.layers[i]
@@ -110,6 +111,9 @@ class NeuralNetwork:
                 neuron.bias -= learning_rate * db[:, j]
 
             dA = np.dot(dZ, np.array([neuron.weights for neuron in current_layer]))
+
+        # print(f'Mean dA of FCN: {(dA ** 2).mean()}')
+        return dA
 
     def train(self, X_train, y_train, X_val, y_val, learning_rate: float, epochs: int, batch_size: int = 32,
               early_stop_epochs: int = 0):
