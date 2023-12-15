@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import sklearn
+from sklearn.metrics import confusion_matrix, precision_score, f1_score, accuracy_score
 
 import NN as nn
 from autoencoder_main import convert_to_image
@@ -192,7 +193,7 @@ def train(X_train, network: nn.NeuralNetwork, parameters, number_of_epochs, mini
             Z = Z.reshape(n, -1)
 
             network.feed_forward(Z)
-            dZ = network.back_propagation(Z, X_mini.reshape(X_mini.shape[0], -1), 0.000009)  # -------------------------------------------------------------------------------------------------------
+            dZ = network.back_propagation(Z, X_mini.reshape(X_mini.shape[0], -1), 0.000009)
 
             dZ = dZ * sigmoid(Z, derivative=True)
             dZ = dZ.reshape(dZ.shape[0], 4, 4, 5)
@@ -210,6 +211,7 @@ def train(X_train, network: nn.NeuralNetwork, parameters, number_of_epochs, mini
 
         with open('CNN.pkl', 'wb') as file:
             pickle.dump(parameters, file)
+        print(parameters)
         with open('FCN.pkl', 'wb') as file:
             pickle.dump(network, file)
 
@@ -226,6 +228,27 @@ def plot_cnn_filters():
         ax.imshow(filter, cmap='gray')
         ax.axis('off')
         ax.set_title(f'Filter {i + 1}')
+    plt.show()
+
+
+def maximize_filter_activation(filter_index=0, num_iterations=30, step_size=1):
+    with open('CNN_5.pkl', 'rb') as file:
+        parameters = pickle.load(file)
+
+    image = np.random.rand(28, 28, 1) * 20 + 128
+
+    for i in range(num_iterations):
+        activations, cache = conv_forward(image[np.newaxis, ...], parameters['W1'], parameters['b1'],
+                                          {'stride': 1, 'pad': 0})
+        dactivations = np.zeros_like(activations)
+        dactivations[:, :, :, filter_index] = 1
+        dimage, _, _ = conv_backward(dactivations, cache)
+        image += step_size * dimage[0]
+        image = np.clip(image, 0, 255)
+
+    plt.imshow(image.squeeze(), cmap='gray')
+    plt.title(f"Image that Maximizes Filter {filter_index + 1}")
+    plt.axis('off')
     plt.show()
 
 
@@ -271,7 +294,7 @@ def main():
         network = nn.NeuralNetwork([80, 180, 784], [None, 'sigmoid', 'linear'],
                                    weights_strategy='xavier')
 
-    learning_rate = 0.000083  # ---------------------------------------------------------------------------------------------------------------
+    learning_rate = 0.000083
     number_of_epochs = 1
     mini_batch_size = 64
 
@@ -282,9 +305,9 @@ def main():
     data1 = pd.read_csv('fashion-mnist_train.csv')
     data2 = pd.read_csv('fashion-mnist_test.csv')
     data = pd.concat([data1, data2])
-    X = data[data['label'] == 8]
-    y = X[['label']].values
-    X = X.drop(columns=['label']).values / 255
+    # X = data[data['label'] == 8]
+    y = data[['label']].values
+    X = data.drop(columns=['label']).values / 255
 
     X = X.reshape(X.shape[0], 28, 28, 1)
 
@@ -335,7 +358,70 @@ def f_mnist(value=4):
     convert_to_image(y_pred)
 
 
+def encode(X, parameters):
+    hparameters_conv1 = {"stride": 2, "pad": 0}
+    hparameters_pool = {"stride": 2, "f": 2}
+    hparameters_conv2 = {"stride": 1, "pad": 0}
+
+    A, cache_conv1 = conv_forward(X, parameters["W1"], parameters["b1"], hparameters_conv1)
+    A = relu(A)
+    P, cache_pool = pool_forward(A, hparameters_pool, mode="max")
+    Z, cache_conv2 = conv_forward(P, parameters["W2"], parameters["b2"], hparameters_conv2)
+    Z = sigmoid(Z)
+
+    n = Z.shape[0]
+    return Z.reshape(n, -1)
+
+
+def train_with_encoder():
+    with open('CNN_all.pkl', 'rb') as f:
+        parameters = pickle.load(f)
+
+    data1 = pd.read_csv('fashion-mnist_train.csv')
+    data2 = pd.read_csv('fashion-mnist_test.csv')
+    data = pd.concat([data1, data2])
+
+    encoded = []
+    y = []
+
+    for i in range(10):
+        X = data[data['label'] == i].drop(columns=['label']).values / 255
+        X = X.reshape(len(X), 28, 28, 1)
+        encoded.append(encode(X, parameters))
+        y.extend([i] * len(X))
+
+    encoded = np.vstack(encoded)
+    y = np.array(y)
+
+    num_classes = 10
+    one_hot_encoded = np.zeros((len(y), num_classes))
+    for i, item in enumerate(y):
+        one_hot_encoded[i, item] = 1
+    y = one_hot_encoded
+
+    X_train, X_val, y_train, y_val = sklearn.model_selection.train_test_split(encoded, y, train_size=0.85)
+    X_val, X_test, y_val, y_test = sklearn.model_selection.train_test_split(X_val, y_val, train_size=0.8)
+
+    network = nn.NeuralNetwork([80, 100, 100, 100, 10], [None, 'sigmoid', 'relu', 'sigmoid', 'softmax'],
+                               weights_strategy='he')
+    network = network.train(X_train, y_train, X_val, y_val, learning_rate=0.0005, epochs=200)
+
+    y_pred = network.feed_forward(X_test)
+
+    print(confusion_matrix(np.argmax(y_test, axis=1), np.argmax(y_pred, axis=1)))
+    print("Loss of the best model:")
+    print(np.average(np.sum(network.calc_loss(network.feed_forward(X_test), y_test), axis=1)))
+    print("Precision:")
+    print(precision_score(np.argmax(y_test, axis=1), np.argmax(y_pred, axis=1), average='macro'))
+    print("F1:")
+    print(f1_score(np.argmax(y_test, axis=1), np.argmax(y_pred, axis=1), average='macro'))
+    print("Accuracy:")
+    print(accuracy_score(np.argmax(y_test, axis=1), np.argmax(y_pred, axis=1)))
+
+
 if __name__ == "__main__":
     # main()
     # f_mnist()
-    plot_cnn_filters()
+    # plot_cnn_filters()
+    maximize_filter_activation(filter_index=1, num_iterations=1000)
+    # train_with_encoder()
